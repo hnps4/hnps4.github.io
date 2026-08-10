@@ -121,13 +121,13 @@ async function doJb() {
 
       load_bin(bin_u8);
 
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // await new Promise(resolve => setTimeout(resolve, 3000));
 
-      const fan_rsp = await fetch("src/fancontrol.bin");
-      const fan_buf = await fan_rsp.arrayBuffer();
-      const fan_u8 = new Uint8Array(fan_buf);
+      // const fan_rsp = await fetch("src/fancontrol.bin");
+      // const fan_buf = await fan_rsp.arrayBuffer();
+      // const fan_u8 = new Uint8Array(fan_buf);
 
-      load_bin(fan_u8);
+      // load_bin(fan_u8);
     }
 
     logger.info("Tekan tombol PS untuk keluar");
