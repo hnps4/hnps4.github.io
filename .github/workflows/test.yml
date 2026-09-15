@@ -13,42 +13,45 @@ jobs:
       # 1. Jalankan container Debian Server di background
       - name: Start Debian Server App
         run: |
-          docker run -d -p 6080:6080 --name myapp ibagus/xfce-novnc:latest sh -c \
+          docker run -d -p 6080:6080 --name myapp debian:bookworm-slim sh -c \
             "apt-get update && apt-get install -y netcat-openbsd && \
-             echo -e 'HTTP/1.1 200 OK\n\nHello from Debian Server in GitHub Actions!' > response.txt && \
+             echo -e 'HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 39\n\nHello from Debian Server in Actions!' > response.txt && \
              while true; do cat response.txt | nc -l -p 6080; done"
 
-      # 2. Jalankan Cloudflare Tunnel untuk mengekspos port 6080 ke internet
+          # TUNGGU hingga port 6080 benar-benar aktif di localhost
+          echo "Menunggu aplikasi siap di port 6080..."
+          for i in {1..20}; do
+            if nc -z localhost 6080; then
+              echo "Aplikasi di port 6080 SIAP!"
+              break
+            fi
+            sleep 1
+          done
+
+      # 2. Jalankan Cloudflare Tunnel
       - name: Start Cloudflare Tunnel
         id: tunnel
         run: |
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           
-          # Jalankan tunnel di background
-          cloudflared tunnel --url http://localhost:6080 > cloudflared.log 2>&1 &
+          # Gunakan 127.0.0.1 alih-alih localhost untuk menghindari isu IPv6/IPv4 binding
+          cloudflared tunnel --url http://127.0.0.1:6080 > cloudflared.log 2>&1 &
           
-          # Tunggu proses tunnel siap dan dapatkan URL yang valid
           echo "Menunggu Cloudflare Tunnel membuat koneksi..."
           TUNNEL_URL=""
           for i in {1..30}; do
-            # Regex diperbarui agar memastikan akhiran .trycloudflare.com ditangkap utuh
             TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" cloudflared.log | head -n 1 || true)
-            
-            # Verifikasi bahwa URL terdeteksi dan tidak terpotong
             if [[ -n "$TUNNEL_URL" && "$TUNNEL_URL" == *.trycloudflare.com ]]; then
               break
             fi
             sleep 1
           done
 
-          # Beri jeda 2 detik ekstra agar DNS propagates secara global
           sleep 2
 
-          # Jika URL gagal didapatkan, hentikan workflow dan tampilkan log
           if [ -z "$TUNNEL_URL" ]; then
             echo "::error::Gagal mendapatkan URL Cloudflare Tunnel!"
-            echo "--- ISI LOG CLOUDFLARED ---"
             cat cloudflared.log
             exit 1
           fi
