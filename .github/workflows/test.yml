@@ -1,7 +1,7 @@
 name: Automated Testing with Debian Server & Tmate
 
 on:
-  workflow_dispatch: # Memungkinkan pemicuan manual
+  workflow_dispatch:
 
 jobs:
   debian-test-debug:
@@ -10,22 +10,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. Jalankan container Debian Server di background
-      - name: Start Debian Server App
+      # 1. Siapkan Debian Server dengan cara eksekusi berurutan (Synchronous)
+      - name: Start Debian Server App & Verify Local Connection
         run: |
-          docker run -d -p 6080:6080 --name myapp debian:bookworm-slim sh -c \
-            "apt-get update && apt-get install -y netcat-openbsd && \
-             echo -e 'HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 39\n\nHello from Debian Server in Actions!' > response.txt && \
-             while true; do cat response.txt | nc -l -p 6080; done"
-
-          # TUNGGU hingga port 6080 benar-benar aktif di localhost
-          echo "Menunggu aplikasi siap di port 6080..."
-          for i in {1..20}; do
-            if nc -z localhost 6080; then
-              echo "Aplikasi di port 6080 SIAP!"
+          # A. Jalankan container Debian dan tahan agar terus hidup
+          docker run -d -p 6080:6080 --name myapp debian:bookworm-slim sleep infinity
+          
+          # B. Install Python secara paksa (tunggu hingga proses ini benar-benar selesai)
+          echo "Menginstall dependencies di dalam Debian..."
+          docker exec myapp apt-get update
+          docker exec myapp apt-get install -y python3 curl
+          
+          # C. Jalankan Python Web Server di latar belakang
+          echo "Menjalankan Web Server..."
+          docker exec -d myapp sh -c "echo 'Hello from Debian Server!' > index.html && python3 -m http.server 6080"
+          
+          # D. VALIDASI FATAL: Pastikan GitHub Runner bisa mengakses port 6080
+          # Jika langkah ini gagal, workflow tidak akan berlanjut ke Cloudflare.
+          echo "Menunggu web server merespon di localhost..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:6080 > /dev/null; then
+              echo "✅ BERHASIL! Aplikasi di port 6080 sudah merespon secara lokal."
               break
             fi
-            sleep 1
+            echo "Menunggu server siap... ($i/30)"
+            sleep 2
           done
 
       # 2. Jalankan Cloudflare Tunnel
@@ -35,10 +44,10 @@ jobs:
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           
-          # Gunakan 127.0.0.1 alih-alih localhost untuk menghindari isu IPv6/IPv4 binding
+          # Jalankan tunnel mengarah ke port lokal yang sudah terverifikasi di Langkah 1
           cloudflared tunnel --url http://127.0.0.1:6080 > cloudflared.log 2>&1 &
           
-          echo "Menunggu Cloudflare Tunnel membuat koneksi..."
+          echo "Menunggu Cloudflare Tunnel membuat koneksi publik..."
           TUNNEL_URL=""
           for i in {1..30}; do
             TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" cloudflared.log | head -n 1 || true)
@@ -48,8 +57,9 @@ jobs:
             sleep 1
           done
 
-          sleep 2
-
+          # Beri ekstra waktu 3 detik agar DNS Cloudflare menyebar secara global
+          sleep 3
+          
           if [ -z "$TUNNEL_URL" ]; then
             echo "::error::Gagal mendapatkan URL Cloudflare Tunnel!"
             cat cloudflared.log
@@ -65,10 +75,10 @@ jobs:
       # - name: Execute Automated Tests
       #   run: |
       #     URL="${{ steps.tunnel.outputs.tunnel_url }}"
-      #     echo "Menjalankan tes ke URL: $URL"
-      #     curl -sS "$URL"
+      #     echo "Menjalankan tes ke URL publik: $URL"
+      #     # Tambahkan auto-retry jika DNS Cloudflare masih butuh waktu sepersekian detik
+      #     curl -sS --retry 5 --retry-connrefused --retry-delay 3 "$URL"
 
       # 4. Sesi TMATE untuk Debugging Interaktif
       - name: Setup tmate session for live debugging
         uses: mxschmitt/action-tmate@v3
-        # if: failure() # Aktifkan jika tmate hanya dipanggil saat test gagal
