@@ -25,12 +25,27 @@ jobs:
           wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           
-          # Jalankan tunnel di background dan simpan log-nya
+          # Jalankan tunnel di background
           cloudflared tunnel --url http://localhost:6080 > cloudflared.log 2>&1 &
           
-          # Tunggu hingga URL publik digenerate otomatis oleh Cloudflare
-          sleep 5
-          TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" cloudflared.log | head -n 1)
+          # Loop penungguan URL hingga maksimal 30 detik
+          echo "Menunggu Cloudflare Tunnel generate URL..."
+          TUNNEL_URL=""
+          for i in {1..30}; do
+            TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" cloudflared.log | head -n 1 || true)
+            if [ -n "$TUNNEL_URL" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Jika URL gagal didapatkan, tampilkan isi log untuk debugging
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "::error::Gagal mendapatkan URL Cloudflare Tunnel!"
+            echo "--- ISI LOG CLOUDFLARED ---"
+            cat cloudflared.log
+            exit 1
+          fi
           
           echo "=============================================="
           echo "URL AKSES PUBLIK ANDA: $TUNNEL_URL"
