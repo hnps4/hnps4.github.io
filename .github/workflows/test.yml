@@ -1,0 +1,53 @@
+name: Automated Testing with Alpine & Tmate
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Memungkinkan Anda memicu workflow ini secara manual
+
+jobs:
+  alpine-test-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1. Jalankan container Alpine Anda di background
+      # (Contoh ini menyalakan server web sederhana via nc agar container tidak langsung mati)
+      - name: Start Alpine App
+        run: |
+          docker run -d -p 6080:6080 --name myapp ibagus/xfce-novnc:latest sh -c \
+            "echo -e 'HTTP/1.1 200 OK\n\nHello from Alpine in GitHub Actions!' > response.txt && while true; do cat response.txt | nc -l -p 6080; done"
+
+      # 2. Jalankan Cloudflare Tunnel untuk mengekspos port 6080 ke internet
+      - name: Start Cloudflare Tunnel
+        id: tunnel
+        run: |
+          wget https://github.com
+          sudo dpkg -i cloudflared-linux-amd64.deb
+          
+          # Jalankan tunnel di background dan simpan log-nya
+          cloudflared tunnel --url http://localhost:6080 > cloudflared.log 2>&1 &
+          
+          # Tunggu hingga URL publik digenerate otomatis oleh Cloudflare
+          sleep 5
+          TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" cloudflared.log | head -n 1)
+          
+          echo "=============================================="
+          echo "URL AKSES PUBLIK ANDA: $TUNNEL_URL"
+          echo "=============================================="
+          echo "tunnel_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
+
+      # 3. Langkah pengujian otomatis Anda (Ganti dengan perintah testing Anda sendiri)
+      - name: Execute Automated Tests
+        run: |
+          URL="${{ steps.tunnel.outputs.tunnel_url }}"
+          echo "Menjalankan tes ke URL: $URL"
+          curl -sS "$URL"
+
+      # 4. Sesi TMATE untuk Debugging Interaktif
+      # Workflow akan 'tertahan' di sini. Anda bisa masuk ke terminal lewat SSH/Web yang muncul di log.
+      - name: Setup tmate session for live debugging
+        uses: mxschmitt/action-tmate@v3
+        # Jika Anda ingin tmate HANYA berjalan jika tes di atas gagal, hapus tanda pagar di bawah ini:
+        # if: failure() 
