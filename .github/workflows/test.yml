@@ -1,4 +1,4 @@
-name: Automated Testing with Debian Server & Tmate
+name: Automated Testing with Debian & Tmate
 
 on:
   workflow_dispatch:
@@ -10,30 +10,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 1. Siapkan Debian Server dengan cara eksekusi berurutan (Synchronous)
-      - name: Start Debian Server App & Verify Local Connection
+      # 1. Jalankan Container dan Tunggu noVNC Siap
+      - name: Start XFCE noVNC App & Verify Connection
         run: |
-          # A. Jalankan container Debian dan tahan agar terus hidup
-          docker run -d -p 6080:6080 --name myapp ibagus/xfce-novnc:latest sleep infinity
+          # A. Jalankan container secara normal (TANPA sleep infinity atau override bash)
+          # Ini akan membiarkan entrypoint bawaan image menjalankan XFCE dan noVNC
+          docker run -d -p 6080:6080 --name myapp ibagus/xfce-novnc:latest
           
-          # B. Install Python secara paksa (tunggu hingga proses ini benar-benar selesai)
-          echo "Menginstall dependencies di dalam Debian..."
-          docker exec myapp apt-get update
-          docker exec myapp apt-get install -y python3 curl
-          
-          # C. Jalankan Python Web Server di latar belakang
-          echo "Menjalankan Web Server..."
-          docker exec -d myapp sh -c "echo 'Hello from Debian Server!' > index.html && python3 -m http.server 6080"
-          
-          # D. VALIDASI FATAL: Pastikan GitHub Runner bisa mengakses port 6080
-          # Jika langkah ini gagal, workflow tidak akan berlanjut ke Cloudflare.
-          echo "Menunggu web server merespon di localhost..."
+          # B. Validasi: Pastikan service noVNC bawaan sudah menyala dan bisa diakses
+          echo "Menunggu noVNC bawaan merespon di localhost..."
           for i in {1..30}; do
+            # Cek koneksi HTTP lokal. Jika noVNC sudah up, curl akan berhasil.
             if curl -s http://127.0.0.1:6080 > /dev/null; then
-              echo "✅ BERHASIL! Aplikasi di port 6080 sudah merespon secara lokal."
+              echo "✅ BERHASIL! Service noVNC di port 6080 sudah merespon secara lokal."
               break
             fi
-            echo "Menunggu server siap... ($i/30)"
+            echo "Menunggu service siap... ($i/30)"
             sleep 2
           done
 
@@ -69,16 +61,10 @@ jobs:
           echo "=============================================="
           echo "URL AKSES PUBLIK ANDA: $TUNNEL_URL"
           echo "=============================================="
+          echo "Buka URL di atas, lalu tambahkan /vnc.html di belakangnya jika diperlukan."
+          echo "=============================================="
           echo "tunnel_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
 
-      # 3. Langkah pengujian otomatis
-      # - name: Execute Automated Tests
-      #   run: |
-      #     URL="${{ steps.tunnel.outputs.tunnel_url }}"
-      #     echo "Menjalankan tes ke URL publik: $URL"
-      #     # Tambahkan auto-retry jika DNS Cloudflare masih butuh waktu sepersekian detik
-      #     curl -sS --retry 5 --retry-connrefused --retry-delay 3 "$URL"
-
-      # 4. Sesi TMATE untuk Debugging Interaktif
+      # 3. Sesi TMATE untuk Debugging Interaktif
       - name: Setup tmate session for live debugging
         uses: mxschmitt/action-tmate@v3
