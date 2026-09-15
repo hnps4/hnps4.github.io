@@ -14,7 +14,7 @@ jobs:
       - name: Start Debian Server App & Verify Local Connection
         run: |
           # A. Jalankan container Debian dan tahan agar terus hidup
-          docker run -d -p 6080:6080 --name myapp debian:bookworm-slim sleep infinity
+          docker run -d -p 6080:6080 --name myapp ibagus/xfce-novnc:latest sleep infinity
           
           # B. Install Python secara paksa (tunggu hingga proses ini benar-benar selesai)
           echo "Menginstall dependencies di dalam Debian..."
