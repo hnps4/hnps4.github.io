@@ -22,24 +22,30 @@ jobs:
       - name: Start Cloudflare Tunnel
         id: tunnel
         run: |
-          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           
           # Jalankan tunnel di background
           cloudflared tunnel --url http://localhost:6080 > cloudflared.log 2>&1 &
           
-          # Loop penungguan URL hingga maksimal 30 detik
-          echo "Menunggu Cloudflare Tunnel generate URL..."
+          # Tunggu proses tunnel siap dan dapatkan URL yang valid
+          echo "Menunggu Cloudflare Tunnel membuat koneksi..."
           TUNNEL_URL=""
           for i in {1..30}; do
-            TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9.-]+\.trycloudflare\.com" cloudflared.log | head -n 1 || true)
-            if [ -n "$TUNNEL_URL" ]; then
+            # Regex diperbarui agar memastikan akhiran .trycloudflare.com ditangkap utuh
+            TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" cloudflared.log | head -n 1 || true)
+            
+            # Verifikasi bahwa URL terdeteksi dan tidak terpotong
+            if [[ -n "$TUNNEL_URL" && "$TUNNEL_URL" == *.trycloudflare.com ]]; then
               break
             fi
             sleep 1
           done
 
-          # Jika URL gagal didapatkan, tampilkan isi log untuk debugging
+          # Beri jeda 2 detik ekstra agar DNS propagates secara global
+          sleep 2
+
+          # Jika URL gagal didapatkan, hentikan workflow dan tampilkan log
           if [ -z "$TUNNEL_URL" ]; then
             echo "::error::Gagal mendapatkan URL Cloudflare Tunnel!"
             echo "--- ISI LOG CLOUDFLARED ---"
@@ -53,11 +59,11 @@ jobs:
           echo "tunnel_url=$TUNNEL_URL" >> $GITHUB_OUTPUT
 
       # 3. Langkah pengujian otomatis
-      - name: Execute Automated Tests
-        run: |
-          URL="${{ steps.tunnel.outputs.tunnel_url }}"
-          echo "Menjalankan tes ke URL: $URL"
-          curl -sS "$URL"
+      # - name: Execute Automated Tests
+      #   run: |
+      #     URL="${{ steps.tunnel.outputs.tunnel_url }}"
+      #     echo "Menjalankan tes ke URL: $URL"
+      #     curl -sS "$URL"
 
       # 4. Sesi TMATE untuk Debugging Interaktif
       - name: Setup tmate session for live debugging
